@@ -83,12 +83,12 @@ def cleanup_resources():
             both_logger.error(f"清理语音队列失败: {e}") # 输出错误信息到控制台和文件
 
         # 清理UI资源
-        try:
-            if 'ui' in globals() and ui:
-                ui.close()
-                console_logger.warning("UI资源已清理") # 输出基本信息到控制台
-        except Exception as e:
-            both_logger.error(f"清理UI资源失败: {e}") # 输出错误信息到控制台和文件
+        # try:
+        #     if 'ui' in globals() and ui:
+        #         ui.close()
+        #         console_logger.warning("UI资源已清理") # 输出基本信息到控制台
+        # except Exception as e:
+        #     both_logger.error(f"清理UI资源失败: {e}") # 输出错误信息到控制台和文件
 
         # 清理临时文件和缓存
         # try:

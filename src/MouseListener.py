@@ -19,6 +19,7 @@ is_test_mode_enabled = False # 测试模式标志，初始为False，表示未�
 ui = None # 定义全局变量ui,用于存储UI对象
 mouse_listener = None # 当前鼠标监听器实例
 current_profile = None # 定义全局变量profile,用于存储方案参数
+total_y_movement = None # 最小y轴移动量
 
 def stop_mouse_listener():
     """停止当前鼠标监听器"""
@@ -128,9 +129,51 @@ relevant_mouse_buttons = {
     mouse.Button.left, mouse.Button.x1, mouse.Button.x2,
 }
 
+def drag_mouse_loop():
+    '''拖动鼠标循环函数'''
+    global total_y_movement, current_profile
+
+    total_x_movement = 0  # 记录总水平移动距离
+    start_drag_time = time.time()  # 记录开始拖动的时间
+
+    while is_status and total_y_movement < current_profile.base_params['move_y_min']:  # 当程序运行状态为True时, 且y轴移动量比最小移动量小时
+
+        if mouse.Button.x1 in current_pressed_mouse_buttons or mouse.Button.x2 in current_pressed_mouse_buttons:  # 如果侧边按钮x1或x2被按下
+            break  # 如果侧边按钮x1或x2被按下，跳出循环，结束拖动
+        if shift_pressed:  # 如果 shift 键被按下
+            continue  # 如果 shift 键被按下，跳过当前循环，继续下一次循环
+
+        current_time = time.time()  # 获取当前时间
+        elapsed = current_time - start_drag_time  # 计算已过去的时间
+        # 根据已流逝时间获取对应的参数
+        params = get_parameters_for_elapsed(current_profile, elapsed)  # 调用get_parameters_for_elapsed函数获取对应的参数，elapsed是已流逝的时间，current_profile是储存当前方案参数的profile类
+
+        # 在1和3三个数中随机选一个，如果是1，则x轴进行随机偏移，否则不进行随机偏移（用来降低随机偏移的频率）
+        offset = random.randint(1, 3)
+
+        if offset == 1:
+            if total_x_movement >= 5 or total_x_movement <= -5:  # 如果水平移动距离超过5或小于-5
+                x_offset = (-total_x_movement + 2) if total_x_movement > 0 else (
+                            -total_x_movement - 2)  # 如果水平移动距离超过5或小于-5，反向移动鼠标，移动距离为当前水平移动距离的相反数再加2
+            else:
+                x_offset = random.randint(get_param_value(params, 'x_min'), get_param_value(params, 'x_max'))
+        else:
+            x_offset = 0
+
+        y_move = random.randint(get_param_value(params, 'y_min'), get_param_value(params, 'y_max'))
+
+        total_y_movement += y_move
+        total_x_movement += x_offset  # 累加水平移动距离
+
+        # print(f'正在补偿移动:{y_move}')
+        mouse_xy(x_offset, y_move)  # 调用mouse_xy函数移动鼠标
+
+        sleep_time = random.uniform(get_param_value(params, 'sleep_min') / 1000, get_param_value(params, 'sleep_max') / 1000)  # 生成随机的休眠时间，random.uniform生成一个浮点数随机数，包含两端点
+        time.sleep(sleep_time)  # 休眠一段时间
+
 def drag_mouse():
     '''拖动鼠标'''
-    global is_dragging, is_status, ui, current_profile, drag_parameters  # 声明全局变量
+    global is_dragging, is_status, ui, current_profile, drag_parameters, total_y_movement  # 声明全局变量
 
     try:
         delay_min, delay_max = drag_parameters[0], drag_parameters[-1]
@@ -140,6 +183,7 @@ def drag_mouse():
         console_logger.error(f"参数加载失败: {e}")
         return
 
+    total_y_movement = 0 # 记录总竖直移动距离
     total_x_movement = 0 # 记录总水平移动距离
     start_drag_time = time.time() # 记录开始拖动的时间
 
@@ -155,13 +199,20 @@ def drag_mouse():
         # 根据已流逝时间获取对应的参数
         params = get_parameters_for_elapsed(current_profile, elapsed) # 调用get_parameters_for_elapsed函数获取对应的参数，elapsed是已流逝的时间，current_profile是储存当前方案参数的profile类
 
-        if total_x_movement >= 5 or total_x_movement <= -5: # 如果水平移动距离超过5或小于-5
-            x_offset = (-total_x_movement + 2) if total_x_movement > 0 else (-total_x_movement - 2) # 如果水平移动距离超过5或小于-5，反向移动鼠标，移动距离为当前水平移动距离的相反数再加2
+        # 在1和3三个数中随机选一个，如果是1，则x轴进行随机偏移，否则不进行随机偏移（用来降低随机偏移的频率）
+        offset = random.randint(1, 3)
+
+        if offset == 1:
+            if total_x_movement >= 5 or total_x_movement <= -5: # 如果水平移动距离超过5或小于-5
+                x_offset = (-total_x_movement + 2) if total_x_movement > 0 else (-total_x_movement - 2) # 如果水平移动距离超过5或小于-5，反向移动鼠标，移动距离为当前水平移动距离的相反数再加2
+            else:
+                x_offset = random.randint(get_param_value(params, 'x_min'), get_param_value(params, 'x_max'))
         else:
-            x_offset = random.randint(get_param_value(params, 'x_min'), get_param_value(params, 'x_max'))
+            x_offset = 0
 
         y_move = random.randint(get_param_value(params, 'y_min'), get_param_value(params, 'y_max'))
 
+        total_y_movement += y_move
         total_x_movement += x_offset # 累加水平移动距离
 
         mouse_xy(x_offset, y_move) # 调用mouse_xy函数移动鼠标
@@ -175,7 +226,7 @@ def drag_mouse():
 
 def handle_mouse_button_left(x, y, button, pressed):
     '''处理鼠标左键事件'''
-    global is_dragging  # 声明全局变量is_dragging
+    global is_dragging, total_y_movement, current_profile  # 声明全局变量is_dragging
 
     if mouse.Button.x1 in current_pressed_mouse_buttons or mouse.Button.x2 in current_pressed_mouse_buttons: # 如果侧边按钮x1或x2被按下
         return  # 如果侧边按钮x1或x2被按下，直接返回,不处理鼠标左键事件
@@ -197,6 +248,10 @@ def handle_mouse_button_left(x, y, button, pressed):
         elif not pressed: # 如果是释放事件
             with lock: # 获取锁
                 is_dragging = False # 设置为停止拖动
+
+            if total_y_movement < current_profile.base_params['move_y_min']: # 抬起鼠标后，对y轴累计移动量进行检查，如果小于设置的最小移动量则继续进行移动
+                # print(f'当前y轴移动量{total_y_movement}, 小于{current_profile.base_params['move_y_min']}')
+                safe_submit(drag_mouse_loop)
 
             if is_test_mode_enabled:  # 如果是测试模式处于启用状态
                 end_time = time.time() # 记录结束拖动的时间

@@ -7,7 +7,6 @@ from Logger import console_logger, both_logger  # 导入Logger模块,用于日�
 
 # 全局线程池实例，采用单例模式
 thread_pool = None
-is_shutting_down = False  # 全局变量，用于标记线程池是否正在关闭中
 
 def init_thread_pool():
     """初始化全局线程池"""
@@ -53,24 +52,11 @@ def thread_safe(func):
 
 def safe_submit(func, *args, **kwargs):
     """安全提交任务到线程池，带异常处理"""
-    global is_shutting_down
-
-    if is_shutting_down:
-        console_logger.warning("线程池正在关闭中，任务提交被拒绝")
-        return None
-
     pool = get_thread_pool()
     if pool:
-        try:
-            # 包装原始函数以处理异常
-            safe_func = thread_safe(func)
-            return pool.submit(safe_func, *args, **kwargs)
-        except RuntimeError as e:
-            if "shutdown" in str(e): # 检查异常信息中是否包含 "shutdown" 字符串
-                console_logger.warning("线程池已关闭，任务提交失败")
-                return None
-            else:
-                raise
+        # 包装原始函数以处理异常
+        safe_func = thread_safe(func)
+        return pool.submit(safe_func, *args, **kwargs)
     else:
         console_logger.warning("线程池未初始化，任务提交失败")
         return None
@@ -88,17 +74,12 @@ def safe_submit_delayed(delay, func, *args, **kwargs):
 
 def shutdown_thread_pool():
     """关闭线程池"""
-    global thread_pool, is_shutting_down
-
-    is_shutting_down = True  # 设置全局变量，标记线程池正在关闭中
-
+    global thread_pool
     if thread_pool:  # 检查线程池是否存在,避免重复关闭
-        try:
-            thread_pool.shutdown(wait = True)  # 等待所有任务完成后关闭线程池
-            thread_pool = None  # 将线程池实例置为 None，确保不再使用
-            console_logger.warning("线程池已关闭")
-        except Exception as e:
-            console_logger.error(f"线程池关闭异常: {e}")
+        thread_pool.shutdown(wait=False)  # 关闭线程池，不等待任务完成
+        thread_pool = None  # 将线程池实例置为 None，确保不再使用
+        console_logger.warning("线程池已关闭")
+
 
 
 # 模块导入时自动初始化

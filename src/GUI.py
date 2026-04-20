@@ -14,10 +14,13 @@ from KeyBoardListener import KBL_set_status
 from PyTTSx4 import add_voice_queue # 导入PyTTSx4模块,用于语音播报
 from PaddleOCR import AutomaticRecognition # 导入AutomaticRecognition模块,用于自动识别游戏中的元素
 
+profiles_json = None # 参数方案文件
 is_status = False # 全局变量is_status,用于控制程序的运行/暂停状态，初始值为False，表示程序暂停
 recognizer = None # 全局变量recognizer,用于存储识别器对象，初始值为None
 results = None # 全局变量results,用于存储识别结果字典，初始值为None
 skip_next_recognition = False  # 是否跳过下次识别
+main_keyboard_area_keys_1_2 = [1] # 全局列表，存储字母区按键1和2的顺序，初始值为空列表，用于在进行识别后，自动切换方案
+plan_parameters = None # 全局字典，用于存储方案参数，便于后续解析函数调用
 
 class MainWindow(QMainWindow): #主窗口
 
@@ -40,7 +43,7 @@ class MainWindow(QMainWindow): #主窗口
         self.connect_signal_slot_function() #调用connect_signal_slot_function方法，连接信号与槽函数
 
     def init_ui(self):
-        self.setWindowTitle("游戏助手1.7.0")  # 设置窗口标题
+        self.setWindowTitle("游戏助手1.7.1")  # 设置窗口标题
 
         mainWidget = QWidget() #创建一个主窗口控件
         self.setCentralWidget(mainWidget) #将主窗口控件设置为窗口的中央控件
@@ -94,6 +97,7 @@ class MainWindow(QMainWindow): #主窗口
         paramsTab_layout.addWidget(QLabel('参数方案：'), 0, 0, 1, 1) #将标签添加到网格布局中
         self.profile_combo = QComboBox() #创建参数方案下拉框
         self.profile_combo.currentTextChanged.connect(self.refresh_sub_plan_list) # 父方案下拉框的内容改变时，刷新子方案列表
+        #self.profile_combo.textActivated.connect(self.refresh_parent_plan_list) # 手动改变父方案下拉框的内容时，刷新子方案列表
         '''currentIndexChanged,选中索引变化,由用户或程序触发； currentTextChanged，显示文本变化，由用户或程序触发
         activated，用户改变选择项目，传递索引(int)，仅用户触发； textActivated，用户改变选择项目，传递文本(str)，仅用户触发'''
         paramsTab_layout.addWidget(self.profile_combo, 1, 0, 1, 2) #将下拉框添加到网格布局中
@@ -101,10 +105,11 @@ class MainWindow(QMainWindow): #主窗口
         paramsTab_layout.addWidget(QLabel('子方案：'), 0, 2, 1, 1) #将标签添加到网格布局中
         self.sub_profile_combo = QComboBox() #创建子方案下拉框
         self.sub_profile_combo.currentTextChanged.connect(self.load_profile) # 子方案下拉框的内容改变时，加载对应的子方案参数
+        #self.sub_profile_combo.textActivated.connect(self.load_profile) # 手动改变子方案下拉框的内容时，加载对应的子方案参数
         paramsTab_layout.addWidget(self.sub_profile_combo, 1, 2, 1, 1) #将下拉框添加到网格布局中
 
         self.load_btn = QPushButton("加载方案", paramsTab) #创建加载方案按钮
-        self.load_btn.clicked.connect(self.load_profile) # 点击按钮时，加载对应的子方案参数
+        self.load_btn.clicked.connect(self.load_profile) # 点击 加载方案 按钮时，加载对应的子方案参数
         paramsTab_layout.addWidget(self.load_btn, 2, 0, 1, 1) #将按钮添加到网格布局中
 
         self.save_btn = QPushButton("保存方案", paramsTab) #创建保存方案按钮
@@ -306,7 +311,7 @@ class MainWindow(QMainWindow): #主窗口
 
     def has_input_focus(self):
         """检查是否有输入控件处于焦点"""
-        focused_widget = QApplication.focusWidget()
+        focused_widget = QApplication.focusWidget()  # 获取当前获得焦点的控件
         if focused_widget is not None: # 如果有控件处于焦点
             # 检查是否是输入相关的控件，包括QLineEdit, QTextEdit, QComboBox
             return isinstance(focused_widget, (QLineEdit, QTextEdit, QComboBox))
@@ -314,7 +319,7 @@ class MainWindow(QMainWindow): #主窗口
 
     def switch_status(self):
         '''切换运行状态'''
-        if self.has_input_focus(): # 如果有输入控件处于焦点
+        if self.has_input_focus(): # 在切换运行状态时，如果有输入控件处于焦点
             return # 不切换状态
 
         global is_status # 声明使用全局变量is_status
@@ -453,7 +458,9 @@ class MainWindow(QMainWindow): #主窗口
             both_logger.debug(f'加载配置文件失败: {str(e)}')
 
     class ProfileSaveDialog(QDialog):
-        '''继承自QDialog：用于创建模态对话框; 内嵌类：定义在ControlUI类内部，可以访问父类的属性和方法; 模态对话框：用户必须完成对话框操作才能继续使用主窗口'''
+        '''继承自QDialog：用于创建模态对话框;
+        内嵌类：定义在ControlUI类内部，可以访问父类的属性和方法;
+        模态对话框：用户必须完成对话框操作才能继续使用主窗口'''
 
         def __init__(self, parent=None):
             '''parent参数：接收父窗口引用，确保对话框显示在父窗口中央'''
@@ -482,6 +489,8 @@ class MainWindow(QMainWindow): #主窗口
 
     def save_sub_profile(self):
         """保存方案参数"""
+        global profiles_json # 保存方案时，使用全局变量
+
         dialog = self.ProfileSaveDialog(self)  # 创建对话框实例
         if dialog.exec_() == QDialog.Accepted:  # 调用exec_()显示对话框并等待用户操作
             parent_name, child_name = dialog.get_names()  # 获取用户输入的方案名称
@@ -494,80 +503,148 @@ class MainWindow(QMainWindow): #主窗口
                 QMessageBox.about(self, '错误', '方案参数不能为空！', QMessageBox.Ok)
                 return
             try:
-                profile_data = json.loads(profile_data)  # 尝试将文本内容解析为JSON格式
+                profile_data = json.loads(profile_data)  # 解析JSON字符串为字典；json.loads()将JSON字符串反序列化为Python字典
+                # 检查方案是否存在，不存在则创建
+                if parent_name not in profiles_json:
+                    profiles_json[parent_name] = {}
+                if child_name not in profiles_json[parent_name]:
+                    profiles_json[parent_name][child_name] = {}
+                # 将方案参数添加到方案文件里
+                profiles_json[parent_name][child_name] = profile_data  # 将方案参数添加到方案文件里
+
             except json.JSONDecodeError as e:
                 QMessageBox.about(self, '错误', f'方案参数格式错误:{str(e)}', QMessageBox.Ok)
                 both_logger.error(f'方案参数格式错误:{str(e)}')
                 return
 
-            profile_dir = Path('profiles') / parent_name  # 父方案目录路径
-            profile_dir.mkdir(parents=True, exist_ok=True)  # 创建父方案目录，parents=True确保父目录也被创建，exist_ok=True如果目录已存在则不抛出异常
-            profile_path = profile_dir / f'{child_name}.json'  # 子方案文件路径
+            # profile_dir = Path('profiles') / parent_name  # 父方案目录路径
+            # profile_dir.mkdir(parents=True, exist_ok=True)  # 创建父方案目录，parents=True确保父目录也被创建，exist_ok=True如果目录已存在则不抛出异常
+            profile_path = Path('profiles.json')  # 子方案文件路径
 
             try:
                 with open(profile_path, 'w', encoding='utf-8') as f:
-                    json.dump(profile_data, f, ensure_ascii=False, indent=4)  # 写入方案参数到文件
+                    json.dump(profiles_json, f, ensure_ascii=False, indent=4)  # 写入方案参数到文件
                 QMessageBox.about(self, '成功', f'方案{parent_name}-{child_name}已保存到 {profile_path}')
-                self.refresh_parent_plan_list()  # 刷新父方案列表
+                self.refresh_parent_plan_list()  # 保存方案后，刷新父方案列表
 
             except Exception as e:
                 QMessageBox.about(self, '错误', f'保存方案参数失败: {str(e)}')
                 both_logger.error(f'保存方案参数失败: {str(e)}')
 
+    def read_profiles_json(self):
+        """读取参数方案文件"""
+        global profiles_json # 声明使用全局变量
+
+        profile_path = Path('profiles.json')
+        if not profile_path.exists(): # 如果文件不存在，弹出提示框并返回，不执行任何操作
+            console_logger.info(f'未找到{profile_path}')
+            return
+        try:
+            with open(profile_path, 'r', encoding='utf-8') as f:
+                profiles_json = json.load(f)  # 读取JSON文件内容，将其转换为Python对象（通常是字典或列表）并赋值给profiles_json
+        except Exception as e:
+            both_logger.error(f'读取参数方案文件失败: {str(e)}')
+
+    def save_profiles_json(self):
+        """保存方案参数文件"""
+        global profiles_json
+
+        profile_path = Path('profiles.json')
+        try:
+            with open(profile_path, 'w', encoding='utf-8') as f:
+                json.dump(profiles_json, f, ensure_ascii=False, indent=4)  # 写入方案参数到文件
+            self.refresh_parent_plan_list()  # 保存方案参数文件后，刷新父方案列表
+
+        except Exception as e:
+            QMessageBox.about(self, '错误', f'保存方案参数文件失败: {str(e)}')
+            both_logger.error(f'保存方案参数文件失败: {str(e)}')
+
     def refresh_parent_plan_list(self):
         """刷新父方案列表"""
+        global profiles_json # 声明使用全局变量
+
         parent_name = self.profile_combo.currentText()  # 获取当前选中的父方案名称
         '''combo.count() - 返回下拉列表中项目的总数(整数（int)),用于判断和遍历
          combo.itemText(index) - 根据索引获取下拉列表中对应项目的文本内容; index：整数，项目的索引（从0开始）;返回字符串（str），对应索引的文本内容，用于获取具体内容
          combo.findText(text) - 在下拉列表中查找指定文本，返回对应的索引; text：字符串，要查找的文本;返回整数（int），找到的索引；如果没找到返回-1，用于查找和验证存在性'''
-        profile_dir = Path('profiles')  # 父方案目录路径
-        profile_dir.mkdir(parents=True, exist_ok=True) # .mkdir(parents=True, exist_ok=True)创建父目录，parents=True确保父目录也被创建，exist_ok=True如果目录已存在则不抛出异常
-        parent_plans = [d.name for d in profile_dir.iterdir() if d.is_dir()]  # 列出所有子目录，即父方案名称
-        self.profile_combo.clear()  # 清空下拉框
-        self.profile_combo.addItems(parent_plans)  # 添加父方案名称到下拉框，如果列表不为空：自动显示第一个项目，如果列表为空：显示空白
-        console_logger.info(f'父方案列表已刷新')
-        if parent_name and parent_name in parent_plans: # 如果parent_name不是空字符串且存在于parent_plans列表中，则设置下拉框的当前文本为parent_name
-            self.profile_combo.setCurrentText(parent_name)
+        if profiles_json == None: # 如果profiles_json为空
+            self.read_profiles_json()  # 读取参数方案文件
+
+        if profiles_json: # 如果profiles_json不为空
+            # profile_dir = Path('profiles')  # 父方案目录路径
+            # profile_dir.mkdir(parents=True, exist_ok=True) # .mkdir(parents=True, exist_ok=True)创建父目录，parents=True确保父目录也被创建，exist_ok=True如果目录已存在则不抛出异常
+            # parent_plans = [d.name for d in profile_dir.iterdir() if d.is_dir()]  # 列出所有子目录，即父方案名称
+            parent_plans = profiles_json.keys()  # 从JSON文件中获取所有父方案名称
+            self.profile_combo.clear()  # 清空下拉框
+            self.profile_combo.addItems(parent_plans)  # 添加父方案名称到下拉框，如果列表不为空：自动显示第一个项目，如果列表为空：显示空白
+            if parent_name and parent_name in parent_plans:  # 如果parent_name不是空字符串且存在于parent_plans列表中，则设置下拉框的当前文本为parent_name
+                self.profile_combo.setCurrentText(parent_name)
+            console_logger.info(f'父方案列表已刷新')
 
     def refresh_sub_plan_list(self):
         """刷新子方案列表"""
+        global profiles_json # 声明使用全局变量
+
         parent_name = self.profile_combo.currentText()  # 获取当前选中的父方案名称
-        profile_dir = Path('profiles') / parent_name  # 父方案目录路径
-        if not profile_dir.exists():  # 如果目录不存在，直接返回
+        if not parent_name: # 如果parent_name为空字符串，则直接返回，不执行任何操作
             return
-        sub_plans = [f.stem for f in profile_dir.iterdir() if f.is_file() and f.suffix == '.json']  # 列出所有子方案文件，即子方案名称
-        self.sub_profile_combo.clear()  # 清空下拉框
-        self.sub_profile_combo.addItems(sub_plans)  # 添加子方案名称到下拉框
-        console_logger.info(f'子方案列表已刷新')
+
+        if profiles_json: # 如果profiles_json不为空
+            # profile_dir = Path('profiles') / parent_name  # 父方案目录路径
+            # if not profile_dir.exists():  # 如果目录不存在，直接返回
+            #     return
+            # sub_plans = [f.stem for f in profile_dir.iterdir() if f.is_file() and f.suffix == '.json']  # 列出所有子方案文件，即子方案名称
+            sub_plans = profiles_json[parent_name].keys()  # 从JSON文件指定键中获取所有子方案名称
+            self.sub_profile_combo.clear()  # 清空下拉框
+            self.sub_profile_combo.addItems(sub_plans)  # 添加子方案名称到下拉框
+            console_logger.info(f'子方案列表已刷新')
 
     def load_profile(self):
         """加载方案参数"""
+        global profiles_json, plan_parameters # 声明使用全局变量
+
         parent_name = self.profile_combo.currentText()  # 获取当前选中的父方案名称
         sub_name = self.sub_profile_combo.currentText()  # 获取当前选中的子方案名称
+
         if not parent_name or not sub_name: # 如果parent_name或sub_name为空字符串，则直接返回，不执行任何操作
             return
-        profile_path = Path('profiles') / parent_name / f'{sub_name}.json'  # 子方案文件路径
-        if not profile_path.exists(): # 如果文件不存在，弹出提示框并返回，不执行任何操作
-            QMessageBox.about(self, '错误', f'方案{parent_name}-{sub_name}不存在')
-            return
+
+        # profile_path = Path('profiles') / parent_name / f'{sub_name}.json'  # 子方案文件路径
+        # if not profile_path.exists(): # 如果文件不存在，弹出提示框并返回，不执行任何操作
+        #     QMessageBox.about(self, '错误', f'方案{parent_name}-{sub_name}不存在')
+        #     return
+
         try:
-            with open(profile_path, 'r', encoding='utf-8') as f:
-                profile_data = json.load(f)  # 读取方案参数
-                formatted_json = json.dumps(profile_data, ensure_ascii=False, indent=4) # 修复：使用json.dumps将字典格式化为JSON字符串
-                self.plan_information.setPlainText(formatted_json)  # 显示格式化的JSON
-                console_logger.info(f'方案：{parent_name}-{sub_name} 已加载')
-                self.parse_plan_parameters()  # 加载方案参数后，调用此函数解析方案参数
+            profile_data = profiles_json[parent_name][sub_name]  # 从JSON文件指定键中获取子方案参数
+            plan_parameters = profile_data  # 将方案参数赋值给plan_parameters变量，便于后续解析函数调用
+
+            formatted_json = json.dumps(profile_data, ensure_ascii=False, indent=4) # 使用json.dumps将字典格式化为JSON字符串
+            self.plan_information.setPlainText(formatted_json)  # 设置方案信息文本框的文本为格式化的JSON字符串
+            console_logger.info(f'方案：{parent_name}-{sub_name} 已加载')
+
+            self.parse_plan_parameters()  # 加载方案参数后，调用此函数解析方案参数
+            # with open(profile_path, 'r', encoding='utf-8') as f:
+            #     profile_data = json.load(f)  # 读取方案参数,json.load(f)用于从文件对象f中读取JSON数据并将其转换为Python对象（通常是字典或列表）
+            #     # plan_parameters[parent_name + '-' + sub_name] = profile_data  # 设置键为父方案+子方案名称，值为方案参数字典
+            #
+            #     formatted_json = json.dumps(profile_data, ensure_ascii=False, indent=4) # 修复：使用json.dumps将字典格式化为JSON字符串
+            #     self.plan_information.setPlainText(formatted_json)  # 设置方案信息文本框的文本为格式化的JSON字符串
+            #     console_logger.info(f'方案：{parent_name}-{sub_name} 已加载')
+            #     self.parse_plan_parameters()  # 加载方案参数后，调用此函数解析方案参数
         except Exception as e:
             QMessageBox.about(self, '错误', f'加载方案参数失败: {str(e)}')
             both_logger.error(f'加载方案参数失败: {str(e)}')
 
     def delete_sub_profile(self):
         """删除子方案"""
+        global profiles_json
+
         parent_name = self.profile_combo.currentText()  # 获取当前选中的父方案名称
         sub_name = self.sub_profile_combo.currentText()  # 获取当前选中的子方案名称
         if not parent_name or not sub_name: # 如果parent_name或sub_name为空字符串，则直接返回，不执行任何操作
             return
-        profile_path = Path('profiles') / parent_name / f'{sub_name}.json'  # 子方案文件路径
+
+        profile_path = Path('profiles.json')  # 子方案文件路径
         if not profile_path.exists(): # 如果文件不存在，弹出提示框并返回，不执行任何操作
             QMessageBox.about(self, '错误', f'方案{parent_name}-{sub_name}不存在')
             return
@@ -575,8 +652,15 @@ class MainWindow(QMainWindow): #主窗口
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             try:
-                profile_path.unlink()  # 删除子方案文件
+                # 删除子方案
+                if parent_name in profiles_json and sub_name in profiles_json[parent_name]:
+                    del profiles_json[parent_name][sub_name]
+                    # 如果父方案下没有子方案了，可以选择删除父方案
+                    if not profiles_json[parent_name]:
+                        del profiles_json[parent_name]
+                self.save_profiles_json() # 删除子方案后，保存参数方案文件
                 QMessageBox.about(self, '成功', f'方案{parent_name}-{sub_name}已删除')
+
                 self.refresh_sub_plan_list()  # 删除子方案后，刷新子方案列表
                 console_logger.info(f'方案：{parent_name}-{sub_name} 已删除')
             except Exception as e:
@@ -587,18 +671,27 @@ class MainWindow(QMainWindow): #主窗口
 
     def update_sub_profile(self):
         """更新子方案"""
+        global profiles_json
+
         parent_name = self.profile_combo.currentText()  # 获取当前选中的父方案名称
         sub_name = self.sub_profile_combo.currentText()  # 获取当前选中的子方案名称
+
         if not parent_name or not sub_name:
             return
-        profile_path = Path('profiles') / parent_name / f'{sub_name}.json'  # 子方案文件路径
+
+        profile_path = Path('profiles.json')  # 子方案文件路径
         if not profile_path.exists():
             return
+
         profile_data = self.plan_information.toPlainText()  # 获取方案参数
+
         try:
             profile_data = json.loads(profile_data)  # 解析JSON字符串为字典；json.loads()将JSON字符串反序列化为Python字典
+            profiles_json[parent_name][sub_name] = profile_data
+
             with open(profile_path, 'w', encoding='utf-8') as f:
-                json.dump(profile_data, f, ensure_ascii=False, indent=4)  # 写入方案参数到文件；json.dump()将Python字典序列化为JSON字符串并写入文件
+                json.dump(profiles_json, f, ensure_ascii=False, indent=4)  # 写入方案参数到文件；json.dump()将Python字典序列化为JSON字符串并写入文件
+
             QMessageBox.about(self, '成功', f'方案 {parent_name}-{sub_name} 已更新')
             console_logger.info(f'方案：{parent_name}-{sub_name} 已更新')
             self.load_profile()  # 更新子方案，加载更新后的方案参数
@@ -630,15 +723,18 @@ class MainWindow(QMainWindow): #主窗口
 
     def parse_plan_parameters(self):
         '''解析方案参数'''
+        global plan_parameters # 声明使用全局变量
+
         try:
             data = json.loads(self.plan_information.toPlainText())  # 从UI界面文本框中获取方案参数，并解析为字典
+            # data = plan_parameters  # 从全局变量plan_parameters中获取方案参数
         except json.JSONDecodeError as e:
             QMessageBox.about(self, '错误', f'方案参数格式错误: {str(e)}')
             return
 
         base_params = data["参数信息"]["基础参数"] # 从字典中获取基础参数，查找键为"参数信息"的字典中的"基础参数"键对应的值
         profile = self.ProfileParameters()  # 创建一个ProfileParameters对象
-        profile.base_params = self.parse_parameter_range(base_params)  # 解析基础参数，并将结果赋值给profile对象的base_params属性
+        profile.base_params = self.parse_basic_parameter_range(base_params)  # 解析基础参数，并将结果赋值给profile对象的base_params属性
 
         for time_range, params in data["参数信息"].items(): # 遍历“参数信息”字典中的键值对
             if time_range == "基础参数":  # 如果键为"基础参数"，则跳过
@@ -651,6 +747,23 @@ class MainWindow(QMainWindow): #主窗口
 
         console_logger.info(f'方案参数解析完成')
         set_profile(profile)  # 将解析后的方案参数对象传递给set_profile函数，用于设置全局变量profile
+
+    def parse_basic_parameter_range(self, params):
+        """解析基础参数范围字符串"""
+        x_range = params["x轴偏移"].split('--')  # 以'--'为分隔符，将字符串分割成两个部分，以列表形式赋值给x_range变量
+        y_range = params["y轴移动量"].split('--')
+        sleep_range = params["间隔时间"].split('--')
+        move_y_min = params["y轴最小移动量"]
+
+        return {
+            'x_min': int(x_range[0]),  # 将列表中的第一个元素转换为整数，并赋值给x_min变量
+            'x_max': int(x_range[-1]),  # 将列表中的最后一个元素转换为整数，并赋值给x_max变量
+            'y_min': int(y_range[0]),
+            'y_max': int(y_range[-1]),
+            'sleep_min': int(sleep_range[0]),
+            'sleep_max': int(sleep_range[-1]),
+            'move_y_min': int(move_y_min)
+        }
 
     def parse_time_range(self, time_str):
         """解析时间范围字符串"""
@@ -678,7 +791,7 @@ class MainWindow(QMainWindow): #主窗口
 
     def key_switch_parent_plan(self, direction):
         '''切换父方案'''
-        if self.has_input_focus(): # 如果有输入控件处于焦点
+        if self.has_input_focus(): # 在切换父方案时，如果有输入控件处于焦点
             return # 如果有输入控件处于焦点，则不切换父方案
 
         current_index = self.profile_combo.currentIndex()  # 获取当前选中的父方案索引
@@ -693,7 +806,7 @@ class MainWindow(QMainWindow): #主窗口
 
     def key_switch_sub_plan(self, direction):
         '''切换子方案'''
-        if self.has_input_focus(): # 如果有输入控件处于焦点
+        if self.has_input_focus(): # 在切换子方案时，如果有输入控件处于焦点
             return # 如果有输入控件处于焦点，则不切换子方案
 
         current_index = self.sub_profile_combo.currentIndex()  # 获取当前选中的子方案索引
@@ -719,7 +832,7 @@ class MainWindow(QMainWindow): #主窗口
     }
     def key_number_switch_sub_plan(self, key_vk):
         '''小键盘数字键指定切换子方案'''
-        if self.has_input_focus(): # 如果有输入控件处于焦点
+        if self.has_input_focus(): # 在小键盘指定切换子方案时，如果有输入控件处于焦点
             return # 如果有输入控件处于焦点，则不切换子方案
 
         sub_plan_name = self.Key_vk_switch_sub_plan_map[key_vk]
@@ -729,21 +842,18 @@ class MainWindow(QMainWindow): #主窗口
 
     def recognizer_switch_plan(self, key):
         '''使用识别结果切换父方案和子方案'''
-        if self.has_input_focus(): # 如果有输入控件处于焦点
+        if self.has_input_focus(): # 在使用识别结果切换方案时，如果有输入控件处于焦点
             return # 如果有输入控件处于焦点，则不切换方案
 
-        global results, recognizer
+        global results, recognizer, main_keyboard_area_keys_1_2
 
         if results is None or recognizer is None or not self.auto_switch_profile_CheckBox.isChecked(): # 如果识别结果为空，或识别器对象为空，或自动切换方案复选框未被选中，则直接返回
             return # 直接返回，不执行后续操作
 
-        if key == 1: # 如果参按键为字母区按键1
-            # # 如果results['1号枪-倍镜']['识别文本']为空，则将运行状态切换为暂停
-            # if results["1号枪-倍镜"]['识别文本'] is None:
-            #     if is_status:  # 如果当前状态是运行状态
-            #         self.switch_status_requested.emit()  # 如果倍镜识别结果为空，发送切换状态信号
-            #         console_logger.info(f"1号枪倍镜 {results['1号枪-倍镜']['识别文本']} 为空，切换程序为暂停状态")
-            #     return
+        main_keyboard_area_keys_1_2.append(key) # 将按键添加到列表中，1或2
+        del main_keyboard_area_keys_1_2[0: -1]  # 删除列表中第一个到最后一个元素之间的所有元素
+
+        if key == 1: # 如果按键为字母区按键1
 
             index = self.profile_combo.findText(results['1号枪']['识别文本']) # 查找下拉框里是否有指定文本
             if index != -1: # 如果在父方案组合框中找到匹配项
@@ -762,14 +872,7 @@ class MainWindow(QMainWindow): #主窗口
                 # 设置子方案为识别结果中results['1号枪']['识别文本']
                 self.sub_profile_combo.setCurrentText(results['1号枪-倍镜']['识别文本'])
 
-        elif key == 2: # 如果参按键为字母区按键2
-            # # 如果results['2号枪-倍镜']['识别文本']为None，则将运行状态切换为暂停
-            # if results["2号枪-倍镜"]['识别文本'] is None:
-            #     print(f"2号枪倍镜 为空，切换程序为暂停状态")
-            #     if is_status:  # 如果当前状态是运行状态
-            #         self.switch_status_requested.emit()  # 如果倍镜识别结果为空，发送切换状态信号
-            #         console_logger.info(f"2号枪倍镜 {results['2号枪-倍镜']['识别文本']} 为空，切换程序为暂停状态")
-            #     return
+        elif key == 2: # 如果按键为字母区按键2
 
             index = self.profile_combo.findText(results['2号枪']['识别文本'])
             if index != -1: # 如果在父方案组合框中找到匹配项
@@ -863,7 +966,7 @@ class MainWindow(QMainWindow): #主窗口
         self.ocr_result_te.verticalScrollBar().setValue(0)  # .verticalScrollBar() 方法返回文本框的垂直滚动条对象;.setValue(0) 方法将滚动条值设置为0，即滚动到顶部
 
     def run_the_recognizer(self):
-        '''运行识别器，支持智能跳过机制'''
+        '''运行识别器，支持智能跳过机制，在线程池中运行'''
         global results, recognizer, skip_next_recognition
 
         if recognizer is None: # 如果识别器对象为 None，则说明识别器未创建
@@ -876,7 +979,7 @@ class MainWindow(QMainWindow): #主窗口
             return
 
         # 执行验证区域识别
-        time.sleep(0.2) # 等待0.3秒，确保验证区域截图完成
+        time.sleep(0.25) # 等待0.3秒，确保背包界面已经打开
         results_verify = recognizer.recognize_verify_regions()
         current_verify_result = results_verify['背包']['识别文本']
 
@@ -890,6 +993,11 @@ class MainWindow(QMainWindow): #主窗口
             console_logger.info('验证区域有匹配项，执行完整识别')
             # 显示识别结果到文本框， 通过信号机制在主线程中更新UI
             self.ocr_results_update_requested.emit(results_verify, results, None) # 进行完整识别后，更新识别结果到文本框
+
+            if main_keyboard_area_keys_1_2: # 如果main_keyboard_area_keys_1_2列表不为空
+                key = main_keyboard_area_keys_1_2.pop(-1) # 从列表中取出最后一个按键
+                self.recognizer_switch_plan_requested.emit(key) # 在完整识别后，根据列表中最后一个按键，自动切换方案，发射信号
+
         else:
             # 验证失败，下次不跳过
             skip_next_recognition = False # 标识下次不跳过

@@ -110,7 +110,7 @@ class AutomaticRecognition:
         region_dir = self.base_dir  # 将截图保存路径赋值给 region_dir；
         start_time = time.time()  # 记录开始时间
 
-        screenshot_objects = capture_region(REGIONS, region_dir)  # 调用 capture_region() 函数，截取 Verify 区域的图像，并保存到 region_dir 目录中
+        screenshot_objects = capture_region(REGIONS, region_dir)  # 调用 capture_region() 函数，截取 识别区域的图像，并保存到 region_dir 目录中
 
         output = self.model.predict(input = screenshot_objects, batch_size = len(screenshot_objects))
 
@@ -143,7 +143,7 @@ class AutomaticRecognition:
         region_dir = self.base_dir  # 将截图保存路径赋值给 region_dir；
         start_time = time.time()  # 记录开始时间
 
-        screenshot_objects = capture_region(Verify, region_dir)  # 调用 capture_region() 函数，截取 Verify 区域的图像，并保存到 region_dir 目录中
+        screenshot_objects = capture_region(Verify, region_dir)  # 调用 capture_region() 函数，截取 验证 Verify 区域的图像，并保存到 region_dir 目录中
 
         output = self.model.predict(input = screenshot_objects, batch_size = len(screenshot_objects))
 
